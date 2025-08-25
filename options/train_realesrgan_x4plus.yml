@@ -38,7 +38,7 @@ datasets:
   train:
     name: DIV2K
     type: RealESRGANDataset
-    dataroot_gt: "./DIV2K_dataset/DIV2K_train_HR"
+    dataroot_gt: "./DIV2K_dataset"
     meta_info: "./DIV2K_dataset/meta_info/meta_info_DIV2Kmultiscale.txt"
     io_backend:
       type: disk
