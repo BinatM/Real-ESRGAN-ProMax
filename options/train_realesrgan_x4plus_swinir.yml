@@ -1,11 +1,11 @@
-# general settings
-name: train_RealESRGANx4plus_400k_B12G4
+# Real-ESRGAN with SwinIR Architecture
+# Enhanced configuration for improved perceptual quality and global structure
+name: train_RealESRGAN_SwinIR_x4plus_400k_B12G4
 model_type: RealESRGANModel
 scale: 4
-num_gpu: auto  # auto: can infer from your visible devices automatically. official: 4 GPUs
+num_gpu: auto
 manual_seed: 0
 
-# ----------------- options for synthesizing training data in RealESRGANModel ----------------- #
 # USM the ground-truth
 l1_gt_usm: True
 percep_gt_usm: True
@@ -38,8 +38,8 @@ datasets:
   train:
     name: DIV2K
     type: RealESRGANDataset
-    dataroot_gt: "./DIV2K_dataset"
-    meta_info: "./DIV2K_dataset/meta_info/meta_info_DIV2Kmultiscale.txt"
+    dataroot_gt: datasets/DIV2K
+    meta_info: datasets/DIV2K/meta_info/meta_info_DIV2Kmultiscale.txt
     io_backend:
       type: disk
 
@@ -67,28 +67,25 @@ datasets:
 
     # data loader
     use_shuffle: true
-    num_worker_per_gpu: 2
-    batch_size_per_gpu: 4
+    num_worker_per_gpu: 4
+    batch_size_per_gpu: 2  # Reduced batch size for SwinIR (more memory usage)
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
 
-  # Uncomment these for validation
-  # val:
-  #   name: validation
-  #   type: PairedImageDataset
-  #   dataroot_gt: path_to_gt
-  #   dataroot_lq: path_to_lq
-  #   io_backend:
-  #     type: disk
-
-# network structures
+# network structures - MAIN CHANGE: Using SwinIR instead of RRDBNet
 network_g:
-  type: RRDBNet
-  num_in_ch: 3
-  num_out_ch: 3
-  num_feat: 64
-  num_block: 23
-  num_grow_ch: 32
+  type: SwinIR
+  upscale: 4
+  in_chans: 3
+  img_size: 64    # Input patch size
+  window_size: 8
+  img_range: 1.0
+  depths: [6, 6, 6, 6, 6, 6]  # Number of transformer blocks in each layer
+  embed_dim: 96   # Feature dimension
+  num_heads: [6, 6, 6, 6, 6, 6]  # Number of attention heads
+  mlp_ratio: 2
+  upsampler: 'pixelshuffle'  # For super-resolution
+  resi_connection: '1conv'   # Residual connection type
 
 network_d:
   type: UNetDiscriminatorSN
@@ -98,10 +95,10 @@ network_d:
 
 # path
 path:
-  # use the pre-trained Real-ESRNet model
-  pretrain_network_g: experiments/train_RealESRNetx4plus_smoke/models/net_g_latest.pth
+  # Start training from scratch - no pretrained model
+  pretrain_network_g: ~
   param_key_g: params_ema
-  strict_load_g: true
+  strict_load_g: false  # Changed to false since we're not loading pretrained weights
   resume_state: ~
 
 # training settings
@@ -109,33 +106,33 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 1e-4
+    lr: !!float 2e-4  # Learning rate for SwinIR
     weight_decay: 0
     betas: [0.9, 0.99]
   optim_d:
     type: Adam
-    lr: !!float 1e-4
+    lr: !!float 2e-4
     weight_decay: 0
     betas: [0.9, 0.99]
 
   scheduler:
     type: MultiStepLR
-    milestones: [400000]
+    milestones: [250000, 400000, 450000, 475000]
     gamma: 0.5
 
-  total_iter: 3000
+  total_iter: 500000
   warmup_iter: -1  # no warm up
 
-  # losses
+  # Enhanced losses for your project goals
   pixel_opt:
     type: L1Loss
     loss_weight: 1.0
     reduction: mean
-  # perceptual loss (content and style losses)
+
+  # Enhanced perceptual loss - KEY IMPROVEMENT for your project
   perceptual_opt:
     type: PerceptualLoss
     layer_weights:
-      # before relu
       'conv1_2': 0.1
       'conv2_2': 0.1
       'conv3_4': 1
@@ -144,9 +141,16 @@ train:
     vgg_type: vgg19
     use_input_norm: true
     perceptual_weight: !!float 1.0
-    style_weight: 0
+    style_weight: 0.5  # Increased style weight for better texture
     range_norm: false
     criterion: l1
+
+  # LPIPS loss - INNOVATION from your project proposal
+  # Note: You'll need to implement this as a custom loss
+  lpips_opt:
+    type: LPIPSLoss  # Custom loss you'll implement
+    loss_weight: !!float 0.1
+
   # gan loss
   gan_opt:
     type: GANLoss
@@ -163,20 +167,23 @@ train:
 # val:
 #   val_freq: !!float 5e3
 #   save_img: True
-
 #   metrics:
 #     psnr: # metric name
 #       type: calculate_psnr
 #       crop_border: 4
 #       test_y_channel: false
+#     ssim:
+#       type: calculate_ssim
+#       crop_border: 4
+#       test_y_channel: false
 
 # logging settings
 logger:
-  print_freq: 1000
+  print_freq: 100
   save_checkpoint_freq: 10000  # Save every 10K iterations (much less frequent!)
-  use_tb_logger: False
+  use_tb_logger: true
   wandb:
-    project: ~
+    project: realesrgan-swinir-enhancement
     resume_id: ~
 
 # dist training settings
@@ -184,4 +191,5 @@ dist_params:
   backend: nccl
   port: 29500
 
-use_fp16: true
+find_unused_parameters: true  # Important for SwinIR training
+use_fp16: true  # Mixed precision for efficiency - addresses your performance goals

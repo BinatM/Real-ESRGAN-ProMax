@@ -1,12 +1,13 @@
-# general settings
-name: train_RealESRNetx4plus_smoke
+# SwinIR RealESRNet x4plus - 50K iterations - Optimized for minimal storage
+# Enhanced architecture for your project goals
+name: train_RealESRNet_SwinIR_x4plus_50K
 model_type: RealESRNetModel
 scale: 4
-num_gpu: auto  # auto: can infer from your visible devices automatically. official: 4 GPUs
+num_gpu: auto
 manual_seed: 0
 
-# ----------------- options for synthesizing training data in RealESRNetModel ----------------- #
-gt_usm: True  # USM the ground-truth
+# USM the ground-truth
+gt_usm: True
 
 # the first degradation process
 resize_prob: [0.2, 0.7, 0.1]  # up, down, keep
@@ -69,26 +70,24 @@ datasets:
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
 
-  #Uncomment these for validation
-  # val:
-  #   name: validation
-  #   type: PairedImageDataset
-  #   dataroot_gt: path_to_gt
-  #   dataroot_lq: path_to_lq
-  #   io_backend:
-  #     type: disk
-
-# network structures
+# network structures - MAIN CHANGE: Using SwinIR instead of RRDBNet
 network_g:
-  type: RRDBNet
-  num_in_ch: 3
-  num_out_ch: 3
-  num_feat: 64
-  num_block: 23
-  num_grow_ch: 32
+  type: SwinIR
+  upscale: 4
+  in_chans: 3
+  img_size: 64    # Input patch size
+  window_size: 8
+  img_range: 1.0
+  depths: [6, 6, 6, 6, 6, 6]  # Number of transformer blocks in each layer
+  embed_dim: 96   # Feature dimension
+  num_heads: [6, 6, 6, 6, 6, 6]  # Number of attention heads
+  mlp_ratio: 2
+  upsampler: 'pixelshuffle'  # For super-resolution
+  resi_connection: '1conv'   # Residual connection type
 
 # path
 path:
+  # Start training from scratch - no pretrained model
   pretrain_network_g: ~
   param_key_g: params_ema
   strict_load_g: false
@@ -99,46 +98,37 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 2e-4
+    lr: !!float 2e-4  # Learning rate for SwinIR
     weight_decay: 0
     betas: [0.9, 0.99]
 
   scheduler:
     type: MultiStepLR
-    milestones: [1000000]
+    milestones: [40000]  # Reduce LR at 40K for 50K training
     gamma: 0.5
 
-  total_iter: 1000
-  warmup_iter: -1  # no warm up
+  total_iter: 50000    # 50K iterations for good results
+  warmup_iter: -1      # no warm up
 
-  # losses
+  # Step 1: Only pixel loss (like RealESRNet)
   pixel_opt:
     type: L1Loss
     loss_weight: 1.0
     reduction: mean
 
-# Uncomment these for validation
-#validation settings
-# val:
-#   val_freq: !!float 5e3
-#   save_img: True
-
-#   metrics:
-#     psnr: # metric name
-#       type: calculate_psnr
-#       crop_border: 4
-#       test_y_channel: false
-
-# logging settings
+# logging settings - OPTIMIZED FOR MINIMAL STORAGE
 logger:
-  print_freq: 100
-  save_checkpoint_freq: 10000  # Save every 10K iterations (much less frequent!)
+  print_freq: 500      # Less frequent logging for longer training
+  save_checkpoint_freq: 10000  # Only 5 checkpoints total (10K, 20K, 30K, 40K, 50K)
   use_tb_logger: false
   wandb:
-    project: ~
+    project: realesrgan-swinir-enhancement
     resume_id: ~
 
 # dist training settings
 dist_params:
   backend: nccl
   port: 29500
+
+find_unused_parameters: true  # Important for SwinIR training
+use_fp16: true  # Mixed precision for efficiency
